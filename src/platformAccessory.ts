@@ -1,148 +1,365 @@
-import type { CharacteristicValue, PlatformAccessory, Service } from 'homebridge';
+import type {
+  CharacteristicValue,
+  PlatformAccessory,
+  Service,
+} from "homebridge";
+import AsyncLock from "async-lock";
+import type { MainHomebridgePlatform } from "./platform.js";
 
-import type { ExampleHomebridgePlatform } from './platform.js';
+const maxBrightness = 10;
+const minBrightness = 0;
+const minNightBrightness = -2;
+const maxNightBrightness = -1;
+const minColor = -5;
+const maxColor = 5;
 
-/**
- * Platform Accessory
- * An instance of this class is created for each accessory your platform registers
- * Each accessory may expose multiple services of different service types.
- */
-export class ExamplePlatformAccessory {
+const remapInteger = (
+  value: number,
+  minFrom: number,
+  maxFrom: number,
+  minTo: number,
+  maxTo: number,
+): number => {
+  const newValue = Math.round(
+    ((value - minFrom) / (maxFrom - minFrom)) * (maxTo - minTo) + minTo,
+  );
+  return Math.max(minTo, Math.min(maxTo, newValue));
+};
+
+const remapToIntegers = (
+  value: number,
+  maps: [from: number, to: number][],
+): number => {
+  if (value < maps[0][0]) {
+    return maps[0][1];
+  }
+  for (let i = 0; i < maps.length - 1; i++) {
+    if (maps[i][0] <= value && value < maps[i + 1][0]) {
+      return remapInteger(
+        value,
+        maps[i][0],
+        maps[i + 1][0],
+        maps[i][1],
+        maps[i + 1][1],
+      );
+    }
+  }
+  if (value >= maps[maps.length - 1][0]) {
+    return maps[maps.length - 1][1];
+  }
+
+  throw new Error("Unreachable");
+};
+
+type Signal =
+  | "toggle"
+  | "allLight"
+  | "brighter"
+  | "dimmer"
+  | "warmer"
+  | "cooler"
+  | "warm"
+  | "cool"
+  | "night";
+
+export class MainPlatformAccessory {
   private service: Service;
 
-  /**
-   * These are just used to create a working example
-   * You should implement your own code to track the state of your accessory
-   */
-  private exampleStates = {
-    On: false,
-    Brightness: 100,
+  private lock = new AsyncLock();
+
+  private states = {
+    on: undefined as undefined | "day" | "night" | "off",
+    brightness: undefined as undefined | number,
+    nightBrightness: undefined as undefined | number,
+    color: undefined as undefined | number,
   };
 
+  private config: {
+    ip: string;
+  } & Record<`${Signal}Signal`, string>;
+
   constructor(
-    private readonly platform: ExampleHomebridgePlatform,
+    private readonly platform: MainHomebridgePlatform,
     private readonly accessory: PlatformAccessory,
   ) {
-    // set accessory information
-    this.accessory.getService(this.platform.Service.AccessoryInformation)!
-      .setCharacteristic(this.platform.Characteristic.Manufacturer, 'Default-Manufacturer')
-      .setCharacteristic(this.platform.Characteristic.Model, 'Default-Model')
-      .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Default-Serial');
+    this.config = {
+      ip: platform.config.ip,
+      toggleSignal: platform.config.toggle_signal,
+      allLightSignal: platform.config.allLight_signal,
+      brighterSignal: platform.config.brighter_signal,
+      dimmerSignal: platform.config.dimmer_signal,
+      warmerSignal: platform.config.warmer_signal,
+      coolerSignal: platform.config.cooler_signal,
+      warmSignal: platform.config.warm_signal,
+      coolSignal: platform.config.cool_signal,
+      nightSignal: platform.config.night_signal,
+    };
+    // biome-ignore lint/style/noNonNullAssertion: <explanation>
+    this.accessory
+      .getService(this.platform.Service.AccessoryInformation)!
+      .setCharacteristic(this.platform.Characteristic.Manufacturer, "Doshisha")
+      .setCharacteristic(this.platform.Characteristic.Model, "B506");
 
-    // get the LightBulb service if it exists, otherwise create a new LightBulb service
-    // you can create multiple services for each accessory
+    this.service =
+      this.accessory.getService(this.platform.Service.Lightbulb) ||
+      this.accessory.addService(this.platform.Service.Lightbulb);
 
-    if (accessory.context.device.CustomService) {
-      // This is only required when using Custom Services and Characteristics not support by HomeKit
-      this.service = this.accessory.getService(this.platform.CustomServices[accessory.context.device.CustomService]) ||
-        this.accessory.addService(this.platform.CustomServices[accessory.context.device.CustomService]);
-    } else {
-      this.service = this.accessory.getService(this.platform.Service.Lightbulb) || this.accessory.addService(this.platform.Service.Lightbulb);
+    this.service.setCharacteristic(
+      this.platform.Characteristic.Name,
+      platform.config.name as string,
+    );
+
+    this.service
+      .getCharacteristic(this.platform.Characteristic.On)
+      .onSet(this.setOn.bind(this))
+      .onGet(this.getOn.bind(this));
+
+    this.service
+      .getCharacteristic(this.platform.Characteristic.Brightness)
+      .onSet(this.setBrightness.bind(this))
+      .onGet(this.getBrightness.bind(this));
+
+    this.service
+      .getCharacteristic(this.platform.Characteristic.ColorTemperature)
+      .onSet(this.setColor.bind(this))
+      .onGet(this.getColor.bind(this));
+  }
+
+  async setOn(value: CharacteristicValue) {
+    const isOn = value as boolean;
+    await this.lock.acquire("", async () => {
+      this.platform.log.info(`Requested setOn: ${this.states.on} -> ${isOn}`);
+      if (this.states.on === undefined) {
+        if (isOn) {
+          await this.triggerSignal("allLight");
+          this.states.on = "day";
+          this.states.brightness = 10;
+          this.states.color = 0;
+        } else {
+          await this.triggerSignal("night");
+          await this.triggerSignal("toggle");
+          this.states.on = "off";
+        }
+      } else if (
+        isOn &&
+        (this.states.brightness === undefined ||
+          this.states.color === undefined)
+      ) {
+        await this.triggerSignal("allLight");
+        this.states.brightness = 10;
+        this.states.color = 0;
+      } else if (isOn && this.states.on === "off") {
+        await this.triggerSignal("toggle");
+        this.states.on = "day";
+      } else if (!isOn && this.states.on !== "off") {
+        await this.triggerSignal("toggle");
+        this.states.on = "off";
+      }
+    });
+  }
+
+  async getOn(): Promise<CharacteristicValue> {
+    this.platform.log.info(`Requested getOn: ${this.states.on}`);
+    return this.states.on === "day" || this.states.on === "night";
+  }
+
+  async setBrightness(value: CharacteristicValue) {
+    await this.lock.acquire("", async () => {
+      const brightness = value as number;
+      const divs = remapInteger(
+        brightness,
+        0,
+        100,
+        minBrightness + minNightBrightness,
+        maxBrightness,
+      );
+      this.platform.log.info(
+        `Translating brightness: ${brightness} -> ${divs}`,
+      );
+      this.platform.log.info(
+        `Requested setBrightness: ${this.states.brightness}/${this.states.nightBrightness}@${this.states.on} -> ${divs}`,
+      );
+      if (divs < 0) {
+        if (
+          this.states.on === undefined ||
+          this.states.brightness === undefined
+        ) {
+          await this.triggerSignal("night");
+          await this.triggerSignal("toggle");
+          this.states.on = "off";
+        }
+        if (this.states.on === "off" || this.states.on === "day") {
+          await this.triggerSignal("night");
+          this.states.on = "night";
+          this.states.nightBrightness = -1;
+        }
+        if (
+          this.states.nightBrightness === undefined &&
+          this.states.on === "night"
+        ) {
+          await this.triggerSignal("toggle");
+          await this.triggerSignal("night");
+          this.states.nightBrightness = -1;
+        }
+        if (this.states.nightBrightness !== divs) {
+          await this.triggerSignal("night");
+          this.states.nightBrightness = divs;
+        }
+      } else if (divs >= 0) {
+        if (
+          this.states.on === undefined ||
+          this.states.brightness === undefined
+        ) {
+          await this.triggerSignal("allLight");
+          this.states.on = "day";
+          this.states.brightness = 10;
+          this.states.color = 0;
+        }
+        if (this.states.on === "off") {
+          await this.triggerSignal("toggle");
+          this.states.on = "day";
+        }
+        if (this.states.on === "night") {
+          await this.triggerSignal("toggle");
+          await this.triggerSignal("toggle");
+          this.states.on = "day";
+        }
+        if (this.states.brightness === undefined) {
+          await this.triggerSignal("allLight");
+          this.states.brightness = 10;
+        }
+        for (let i = this.states.brightness; i < divs; i++) {
+          await this.triggerSignal("brighter");
+          this.states.brightness += 1;
+        }
+        for (let i = this.states.brightness; i > divs; i--) {
+          await this.triggerSignal("dimmer");
+          this.states.brightness -= 1;
+        }
+      }
+    });
+  }
+
+  async getBrightness(): Promise<CharacteristicValue> {
+    this.platform.log.info(
+      `Requested getBrightness: ${this.states.brightness}`,
+    );
+    if (this.states.on === undefined) {
+      return 0;
+    }
+    if (this.states.on === "night") {
+      return remapInteger(
+        this.states.nightBrightness ?? 0,
+        minBrightness + minNightBrightness,
+        maxBrightness,
+        0,
+        100,
+      );
+    }
+    if (this.states.on === "day") {
+      return remapInteger(
+        this.states.brightness ?? 0,
+        minBrightness,
+        maxBrightness,
+        0,
+        100,
+      );
     }
 
-    // set the service name, this is what is displayed as the default name on the Home app
-    // in this example we are using the name we stored in the `accessory.context` in the `discoverDevices` method.
-    this.service.setCharacteristic(this.platform.Characteristic.Name, accessory.context.device.exampleDisplayName);
+    if (this.states.on === "off") {
+      return 0;
+    }
 
-    // each service must implement at-minimum the "required characteristics" for the given service type
-    // see https://developers.homebridge.io/#/service/Lightbulb
-
-    // register handlers for the On/Off Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.On)
-      .onSet(this.setOn.bind(this)) // SET - bind to the `setOn` method below
-      .onGet(this.getOn.bind(this)); // GET - bind to the `getOn` method below
-
-    // register handlers for the Brightness Characteristic
-    this.service.getCharacteristic(this.platform.Characteristic.Brightness)
-      .onSet(this.setBrightness.bind(this)); // SET - bind to the `setBrightness` method below
-
-    /**
-     * Creating multiple services of the same type.
-     *
-     * To avoid "Cannot add a Service with the same UUID another Service without also defining a unique 'subtype' property." error,
-     * when creating multiple services of the same type, you need to use the following syntax to specify a name and subtype id:
-     * this.accessory.getService('NAME') || this.accessory.addService(this.platform.Service.Lightbulb, 'NAME', 'USER_DEFINED_SUBTYPE_ID');
-     *
-     * The USER_DEFINED_SUBTYPE must be unique to the platform accessory (if you platform exposes multiple accessories, each accessory
-     * can use the same subtype id.)
-     */
-
-    // Example: add two "motion sensor" services to the accessory
-    const motionSensorOneService = this.accessory.getService('Motion Sensor One Name')
-      || this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor One Name', 'YourUniqueIdentifier-1');
-
-    const motionSensorTwoService = this.accessory.getService('Motion Sensor Two Name')
-      || this.accessory.addService(this.platform.Service.MotionSensor, 'Motion Sensor Two Name', 'YourUniqueIdentifier-2');
-
-    /**
-     * Updating characteristics values asynchronously.
-     *
-     * Example showing how to update the state of a Characteristic asynchronously instead
-     * of using the `on('get')` handlers.
-     * Here we change update the motion sensor trigger states on and off every 10 seconds
-     * the `updateCharacteristic` method.
-     *
-     */
-    let motionDetected = false;
-    setInterval(() => {
-      // EXAMPLE - inverse the trigger
-      motionDetected = !motionDetected;
-
-      // push the new value to HomeKit
-      motionSensorOneService.updateCharacteristic(this.platform.Characteristic.MotionDetected, motionDetected);
-      motionSensorTwoService.updateCharacteristic(this.platform.Characteristic.MotionDetected, !motionDetected);
-
-      this.platform.log.debug('Triggering motionSensorOneService:', motionDetected);
-      this.platform.log.debug('Triggering motionSensorTwoService:', !motionDetected);
-    }, 10000);
+    return 0;
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, turning on a Light bulb.
-   */
-  async setOn(value: CharacteristicValue) {
-    // implement your own code to turn your device on/off
-    this.exampleStates.On = value as boolean;
+  async setColor(value: CharacteristicValue) {
+    if (this.states.on === undefined || this.states.color === undefined) {
+      await this.triggerSignal("allLight");
+      this.states.on = "day";
+      this.states.brightness = 10;
+      this.states.color = 0;
+    }
+    const hapColor = value as number;
+    const color = remapToIntegers(hapColor, [
+      [144, -5],
+      [172, -3],
+      [222, 0],
+      [303, 3],
+      [400, 5],
+    ]);
+    this.platform.log.info(`Translating color: ${hapColor} -> ${color}`);
+    this.platform.log.info(
+      `Requested setColor: ${this.states.color} -> ${color}`,
+    );
 
-    this.platform.log.debug('Set Characteristic On ->', value);
+    if (
+      color === minColor &&
+      this.states.color !== minColor &&
+      this.states.brightness === 10
+    ) {
+      await this.triggerSignal("cool");
+      this.states.on = "day";
+      this.states.color = minColor;
+      this.states.brightness = 10;
+    } else if (
+      color === maxColor &&
+      this.states.color !== maxColor &&
+      this.states.brightness === 10
+    ) {
+      await this.triggerSignal("warm");
+      this.states.on = "day";
+      this.states.color = maxColor;
+      this.states.brightness = 10;
+    } else if (color !== this.states.color) {
+      for (let i = this.states.color; i < color; i++) {
+        await this.triggerSignal("warmer");
+        this.states.color += 1;
+      }
+      for (let i = this.states.color; i > color; i--) {
+        await this.triggerSignal("cooler");
+        this.states.color -= 1;
+      }
+    }
   }
 
-  /**
-   * Handle the "GET" requests from HomeKit
-   * These are sent when HomeKit wants to know the current state of the accessory, for example, checking if a Light bulb is on.
-   *
-   * GET requests should return as fast as possible. A long delay here will result in
-   * HomeKit being unresponsive and a bad user experience in general.
-   *
-   * If your device takes time to respond you should update the status of your device
-   * asynchronously instead using the `updateCharacteristic` method instead.
-   * In this case, you may decide not to implement `onGet` handlers, which may speed up
-   * the responsiveness of your device in the Home app.
-
-   * @example
-   * this.service.updateCharacteristic(this.platform.Characteristic.On, true)
-   */
-  async getOn(): Promise<CharacteristicValue> {
-    // implement your own code to check if the device is on
-    const isOn = this.exampleStates.On;
-
-    this.platform.log.debug('Get Characteristic On ->', isOn);
-
-    // if you need to return an error to show the device as "Not Responding" in the Home app:
-    // throw new this.platform.api.hap.HapStatusError(this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE);
-
-    return isOn;
+  async getColor(): Promise<CharacteristicValue> {
+    this.platform.log.info(`Requested getColor: ${this.states.color}`);
+    const color = this.states.color ?? 0;
+    const hapColor = remapInteger(color, minColor, maxColor, 144, 400);
+    return hapColor;
   }
 
-  /**
-   * Handle "SET" requests from HomeKit
-   * These are sent when the user changes the state of an accessory, for example, changing the Brightness
-   */
-  async setBrightness(value: CharacteristicValue) {
-    // implement your own code to set the brightness
-    this.exampleStates.Brightness = value as number;
+  private async triggerSignal(signal: Signal) {
+    const signalPayload = this.config[`${signal}Signal`];
+    this.platform.log.info(`Triggering signal: ${signal}`);
 
-    this.platform.log.debug('Set Characteristic Brightness -> ', value);
+    await fetch(`http://${this.config.ip}/messages`, {
+      method: "POST",
+      body: signalPayload,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "X-Requested-With": "fetch",
+      },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          this.platform.log.error(
+            `Error sending signal: ${response.statusText}`,
+          );
+
+          throw new Error(`Error sending signal: ${response.statusText}`);
+        }
+        this.platform.log.info("Signal sent successfully");
+        return response.json();
+      })
+      .catch((error) => {
+        this.platform.log.error(`Error sending signal: ${error}`);
+
+        throw new this.platform.api.hap.HapStatusError(
+          this.platform.api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE,
+        );
+      });
   }
 }
