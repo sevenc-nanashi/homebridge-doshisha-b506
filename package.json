@@ -7,6 +7,7 @@
   "description": "Doshisha B506をNature Remo経由で操作するHomebridgeプラグイン。",
   "author": "Nanashi.",
   "license": "Apache-2.0",
+  "packageManager": "pnpm@10.10.0",
   "keywords": [
     "homebridge-plugin"
   ],
@@ -23,7 +24,9 @@
     "build": "pkgroll",
     "prepublishOnly": "pnpm run lint && pnpm run build",
     "watch": "pnpm run build && pnpm link && nodemon",
-    "tools:config": "node --experimental-strip-types ./config.ts"
+    "tools:config": "node --experimental-strip-types ./config.ts",
+    "lint": "biome check",
+    "lint:fix": "biome check --write"
   },
   "dependencies": {
     "async-lock": "^1.4.1",
