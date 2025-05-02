@@ -1,4 +1,5 @@
 import type {
+  AdaptiveLightingController,
   CharacteristicValue,
   PlatformAccessory,
   Service,
@@ -64,6 +65,7 @@ type Signal =
 
 export class MainPlatformAccessory {
   private service: Service;
+  private adaptiveLighting: AdaptiveLightingController;
 
   private lock = new AsyncLock();
 
@@ -123,6 +125,10 @@ export class MainPlatformAccessory {
       .getCharacteristic(this.platform.Characteristic.ColorTemperature)
       .onSet(this.setColor.bind(this))
       .onGet(this.getColor.bind(this));
+
+    this.adaptiveLighting =
+      new this.platform.api.hap.AdaptiveLightingController(this.service);
+    this.accessory.configureController(this.adaptiveLighting);
   }
 
   async setOn(value: CharacteristicValue) {
