@@ -63,18 +63,27 @@ type Signal =
   | "cool"
   | "night";
 
+const unstable = "<unstable>";
+type Unstable = typeof unstable;
+type MaybeUnstable<T> = T | Unstable;
+type State = {
+  on: MaybeUnstable<"day" | "night" | "off">;
+  brightness: MaybeUnstable<number>;
+  nightBrightness: MaybeUnstable<number>;
+  color: MaybeUnstable<number>;
+};
+const isUnstable = <T>(value: T | Unstable): value is Unstable => {
+  return value === unstable;
+};
+const stableOr = <T>(value: T | Unstable, defaultValue: T): T => {
+  return isUnstable(value) ? defaultValue : value;
+};
+
 export class MainPlatformAccessory {
   private service: Service;
   private adaptiveLighting: AdaptiveLightingController;
 
   private lock = new AsyncLock();
-
-  private states = {
-    on: undefined as undefined | "day" | "night" | "off",
-    brightness: undefined as undefined | number,
-    nightBrightness: undefined as undefined | number,
-    color: undefined as undefined | number,
-  };
 
   private config: {
     ip: string;
@@ -82,7 +91,7 @@ export class MainPlatformAccessory {
 
   constructor(
     private readonly platform: MainHomebridgePlatform,
-    private readonly accessory: PlatformAccessory,
+    private readonly accessory: PlatformAccessory<State>,
   ) {
     this.config = {
       ip: platform.config.ip,
@@ -101,6 +110,13 @@ export class MainPlatformAccessory {
       .getService(this.platform.Service.AccessoryInformation)!
       .setCharacteristic(this.platform.Characteristic.Manufacturer, "Doshisha")
       .setCharacteristic(this.platform.Characteristic.Model, "B506");
+
+    this.accessory.context = {
+      on: this.accessory.context.on ?? unstable,
+      brightness: this.accessory.context.brightness ?? unstable,
+      nightBrightness: this.accessory.context.nightBrightness ?? unstable,
+      color: this.accessory.context.color ?? unstable,
+    };
 
     this.service =
       this.accessory.getService(this.platform.Service.Lightbulb) ||
@@ -134,39 +150,44 @@ export class MainPlatformAccessory {
   async setOn(value: CharacteristicValue) {
     const isOn = value as boolean;
     await this.lock.acquire("", async () => {
-      this.platform.log.info(`Requested setOn: ${this.states.on} -> ${isOn}`);
-      if (this.states.on === undefined) {
+      this.platform.log.info(
+        `Requested setOn: ${this.accessory.context.on} -> ${isOn}`,
+      );
+      if (isUnstable(this.accessory.context.on)) {
         if (isOn) {
           await this.triggerSignal("allLight");
-          this.states.on = "day";
-          this.states.brightness = 10;
-          this.states.color = 0;
+          this.accessory.context.on = "day";
+          this.accessory.context.brightness = 10;
+          this.accessory.context.color = 0;
         } else {
           await this.triggerSignal("night");
           await this.triggerSignal("toggle");
-          this.states.on = "off";
+          this.accessory.context.on = "off";
         }
       } else if (
         isOn &&
-        (this.states.brightness === undefined ||
-          this.states.color === undefined)
+        (isUnstable(this.accessory.context.brightness) ||
+          isUnstable(this.accessory.context.color))
       ) {
         await this.triggerSignal("allLight");
-        this.states.brightness = 10;
-        this.states.color = 0;
-      } else if (isOn && this.states.on === "off") {
+        this.accessory.context.brightness = 10;
+        this.accessory.context.color = 0;
+      } else if (isOn && this.accessory.context.on === "off") {
         await this.triggerSignal("toggle");
-        this.states.on = "day";
-      } else if (!isOn && this.states.on !== "off") {
+        this.accessory.context.on = "day";
+      } else if (!isOn && this.accessory.context.on !== "off") {
         await this.triggerSignal("toggle");
-        this.states.on = "off";
+        this.accessory.context.on = "off";
       }
     });
   }
 
   async getOn(): Promise<CharacteristicValue> {
-    this.platform.log.info(`Requested getOn: ${this.states.on}`);
-    return this.states.on === "day" || this.states.on === "night";
+    this.platform.log.info(`Requested getOn: ${this.accessory.context.on}`);
+    return (
+      this.accessory.context.on === "day" ||
+      this.accessory.context.on === "night"
+    );
   }
 
   async setBrightness(value: CharacteristicValue) {
@@ -183,64 +204,67 @@ export class MainPlatformAccessory {
         `Translating brightness: ${brightness} -> ${divs}`,
       );
       this.platform.log.info(
-        `Requested setBrightness: ${this.states.brightness}/${this.states.nightBrightness}@${this.states.on} -> ${divs}`,
+        `Requested setBrightness: ${this.accessory.context.brightness}/${this.accessory.context.nightBrightness}@${this.accessory.context.on} -> ${divs}`,
       );
       if (divs < 0) {
         if (
-          this.states.on === undefined ||
-          this.states.brightness === undefined
+          isUnstable(this.accessory.context.on) ||
+          isUnstable(this.accessory.context.brightness)
         ) {
           await this.triggerSignal("night");
           await this.triggerSignal("toggle");
-          this.states.on = "off";
-        }
-        if (this.states.on === "off" || this.states.on === "day") {
-          await this.triggerSignal("night");
-          this.states.on = "night";
-          this.states.nightBrightness = -1;
+          this.accessory.context.on = "off";
         }
         if (
-          this.states.nightBrightness === undefined &&
-          this.states.on === "night"
+          this.accessory.context.on === "off" ||
+          this.accessory.context.on === "day"
+        ) {
+          await this.triggerSignal("night");
+          this.accessory.context.on = "night";
+          this.accessory.context.nightBrightness = -1;
+        }
+        if (
+          isUnstable(this.accessory.context.nightBrightness) &&
+          this.accessory.context.on === "night"
         ) {
           await this.triggerSignal("toggle");
           await this.triggerSignal("night");
-          this.states.nightBrightness = -1;
+          this.accessory.context.nightBrightness = -1;
         }
-        if (this.states.nightBrightness !== divs) {
+        if (this.accessory.context.nightBrightness !== divs) {
           await this.triggerSignal("night");
-          this.states.nightBrightness = divs;
+          this.accessory.context.nightBrightness = divs;
         }
       } else if (divs >= 0) {
         if (
-          this.states.on === undefined ||
-          this.states.brightness === undefined
+          isUnstable(this.accessory.context.on) ||
+          isUnstable(this.accessory.context.brightness)
         ) {
           await this.triggerSignal("allLight");
-          this.states.on = "day";
-          this.states.brightness = 10;
-          this.states.color = 0;
+          this.accessory.context.on = "day";
+          this.accessory.context.brightness = 10;
+          this.accessory.context.color = 0;
         }
-        if (this.states.on === "off") {
+        if (this.accessory.context.on === "off") {
           await this.triggerSignal("toggle");
-          this.states.on = "day";
+          this.accessory.context.on = "day";
         }
-        if (this.states.on === "night") {
+        if (this.accessory.context.on === "night") {
           await this.triggerSignal("toggle");
           await this.triggerSignal("toggle");
-          this.states.on = "day";
+          this.accessory.context.on = "day";
         }
-        if (this.states.brightness === undefined) {
+        if (isUnstable(this.accessory.context.brightness)) {
           await this.triggerSignal("allLight");
-          this.states.brightness = 10;
+          this.accessory.context.brightness = 10;
         }
-        for (let i = this.states.brightness; i < divs; i++) {
+        for (let i = this.accessory.context.brightness; i < divs; i++) {
           await this.triggerSignal("brighter");
-          this.states.brightness += 1;
+          this.accessory.context.brightness += 1;
         }
-        for (let i = this.states.brightness; i > divs; i--) {
+        for (let i = this.accessory.context.brightness; i > divs; i--) {
           await this.triggerSignal("dimmer");
-          this.states.brightness -= 1;
+          this.accessory.context.brightness -= 1;
         }
       }
     });
@@ -248,23 +272,23 @@ export class MainPlatformAccessory {
 
   async getBrightness(): Promise<CharacteristicValue> {
     this.platform.log.info(
-      `Requested getBrightness: ${this.states.brightness}`,
+      `Requested getBrightness: ${this.accessory.context.brightness}`,
     );
-    if (this.states.on === undefined) {
+    if (isUnstable(this.accessory.context.on)) {
       return 0;
     }
-    if (this.states.on === "night") {
+    if (this.accessory.context.on === "night") {
       return remapInteger(
-        this.states.nightBrightness ?? 0,
+        stableOr(this.accessory.context.nightBrightness, 0),
         minBrightness + minNightBrightness,
         maxBrightness,
         0,
         100,
       );
     }
-    if (this.states.on === "day") {
+    if (this.accessory.context.on === "day") {
       return remapInteger(
-        this.states.brightness ?? 0,
+        stableOr(this.accessory.context.brightness, 0),
         minBrightness,
         maxBrightness,
         0,
@@ -272,7 +296,7 @@ export class MainPlatformAccessory {
       );
     }
 
-    if (this.states.on === "off") {
+    if (this.accessory.context.on === "off") {
       return 0;
     }
 
@@ -280,11 +304,14 @@ export class MainPlatformAccessory {
   }
 
   async setColor(value: CharacteristicValue) {
-    if (this.states.on === undefined || this.states.color === undefined) {
+    if (
+      isUnstable(this.accessory.context.on) ||
+      isUnstable(this.accessory.context.color)
+    ) {
       await this.triggerSignal("allLight");
-      this.states.on = "day";
-      this.states.brightness = 10;
-      this.states.color = 0;
+      this.accessory.context.on = "day";
+      this.accessory.context.brightness = 10;
+      this.accessory.context.color = 0;
     }
     const hapColor = value as number;
     const color = remapToIntegers(hapColor, [
@@ -296,42 +323,53 @@ export class MainPlatformAccessory {
     ]);
     this.platform.log.info(`Translating color: ${hapColor} -> ${color}`);
     this.platform.log.info(
-      `Requested setColor: ${this.states.color} -> ${color}`,
+      `Requested setColor: ${this.accessory.context.color} -> ${color}`,
     );
 
     if (
       color === minColor &&
-      this.states.color !== minColor &&
-      this.states.brightness === 10
+      this.accessory.context.color !== minColor &&
+      this.accessory.context.brightness === 10
     ) {
       await this.triggerSignal("cool");
-      this.states.on = "day";
-      this.states.color = minColor;
-      this.states.brightness = 10;
+      this.accessory.context.on = "day";
+      this.accessory.context.color = minColor;
+      this.accessory.context.brightness = 10;
+    } else if (
+      color === 0 &&
+      this.accessory.context.color !== 0 &&
+      this.accessory.context.brightness === 10
+    ) {
+      await this.triggerSignal("allLight");
+      this.accessory.context.on = "day";
+      this.accessory.context.color = maxColor;
+      this.accessory.context.brightness = 10;
     } else if (
       color === maxColor &&
-      this.states.color !== maxColor &&
-      this.states.brightness === 10
+      this.accessory.context.color !== maxColor &&
+      this.accessory.context.brightness === 10
     ) {
       await this.triggerSignal("warm");
-      this.states.on = "day";
-      this.states.color = maxColor;
-      this.states.brightness = 10;
-    } else if (color !== this.states.color) {
-      for (let i = this.states.color; i < color; i++) {
+      this.accessory.context.on = "day";
+      this.accessory.context.color = maxColor;
+      this.accessory.context.brightness = 10;
+    } else if (color !== this.accessory.context.color) {
+      for (let i = this.accessory.context.color; i < color; i++) {
         await this.triggerSignal("warmer");
-        this.states.color += 1;
+        this.accessory.context.color += 1;
       }
-      for (let i = this.states.color; i > color; i--) {
+      for (let i = this.accessory.context.color; i > color; i--) {
         await this.triggerSignal("cooler");
-        this.states.color -= 1;
+        this.accessory.context.color -= 1;
       }
     }
   }
 
   async getColor(): Promise<CharacteristicValue> {
-    this.platform.log.info(`Requested getColor: ${this.states.color}`);
-    const color = this.states.color ?? 0;
+    this.platform.log.info(
+      `Requested getColor: ${this.accessory.context.color}`,
+    );
+    const color = stableOr(this.accessory.context.color, 0);
     const hapColor = remapInteger(color, minColor, maxColor, 144, 400);
     return hapColor;
   }
