@@ -30,17 +30,17 @@
   },
   "dependencies": {
     "async-lock": "^1.4.1",
-    "homebridge-lib": "^7.1.4"
+    "homebridge-lib": "^7.1.12"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.3.2",
     "@types/async-lock": "^1.4.2",
-    "@types/node": "^22.13.5",
+    "@types/node": "^24.9.2",
     "dequal": "^2.0.3",
-    "homebridge": "^2.0.0-beta.0",
+    "homebridge": "2.0.0-beta.39",
     "nodemon": "^3.1.9",
-    "pkgroll": "^2.12.1",
-    "rimraf": "^6.0.1",
-    "typescript": "^5.7.3"
+    "pkgroll": "^2.20.1",
+    "rimraf": "^6.1.0",
+    "typescript": "^5.9.3"
   }
 }
