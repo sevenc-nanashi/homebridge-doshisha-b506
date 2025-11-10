@@ -1,61 +1,61 @@
 {
-  "pluginAlias": "HomebridgeDoshishaB506",
-  "pluginType": "accessory",
-  "singular": true,
-  "strictValidation": false,
-  "schema": {
-    "type": "object",
-    "properties": {
-      "ip": {
-        "title": "Nature RemoのIPアドレス",
-        "type": "string",
-        "required": true
-      },
-      "toggle_signal": {
-        "title": "信号：消灯/普段灯",
-        "type": "string",
-        "required": true
-      },
-      "all_light_signal": {
-        "title": "信号：全灯",
-        "type": "string",
-        "required": true
-      },
-      "brighter_signal": {
-        "title": "信号：明るく",
-        "type": "string",
-        "required": true
-      },
-      "dimmer_signal": {
-        "title": "信号：暗く",
-        "type": "string",
-        "required": true
-      },
-      "warmer_signal": {
-        "title": "信号：>くつろぎ",
-        "type": "string",
-        "required": true
-      },
-      "cooler_signal": {
-        "title": "信号：<さわやか",
-        "type": "string",
-        "required": true
-      },
-      "warm_signal": {
-        "title": "信号：くつろぎ",
-        "type": "string",
-        "required": true
-      },
-      "cool_signal": {
-        "title": "信号：さわやか",
-        "type": "string",
-        "required": true
-      },
-      "night_light_signal": {
-        "title": "信号：常夜灯",
-        "type": "string",
-        "required": true
-      }
-    }
-  }
+	"pluginAlias": "HomebridgeDoshishaB506",
+	"pluginType": "accessory",
+	"singular": true,
+	"strictValidation": false,
+	"schema": {
+		"type": "object",
+		"properties": {
+			"ip": {
+				"title": "Nature RemoのIPアドレス",
+				"type": "string",
+				"required": true
+			},
+			"toggle_signal": {
+				"title": "信号：消灯/普段灯",
+				"type": "string",
+				"required": true
+			},
+			"all_light_signal": {
+				"title": "信号：全灯",
+				"type": "string",
+				"required": true
+			},
+			"brighter_signal": {
+				"title": "信号：明るく",
+				"type": "string",
+				"required": true
+			},
+			"dimmer_signal": {
+				"title": "信号：暗く",
+				"type": "string",
+				"required": true
+			},
+			"warmer_signal": {
+				"title": "信号：>くつろぎ",
+				"type": "string",
+				"required": true
+			},
+			"cooler_signal": {
+				"title": "信号：<さわやか",
+				"type": "string",
+				"required": true
+			},
+			"warm_signal": {
+				"title": "信号：くつろぎ",
+				"type": "string",
+				"required": true
+			},
+			"cool_signal": {
+				"title": "信号：さわやか",
+				"type": "string",
+				"required": true
+			},
+			"night_light_signal": {
+				"title": "信号：常夜灯",
+				"type": "string",
+				"required": true
+			}
+		}
+	}
 }
