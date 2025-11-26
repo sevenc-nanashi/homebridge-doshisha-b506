@@ -7,13 +7,6 @@ import type {
 import AsyncLock from "async-lock";
 import type { MainHomebridgePlatform } from "./platform.js";
 
-const maxBrightness = 10;
-const minBrightness = 0;
-const minNightBrightness = -2;
-const maxNightBrightness = -1;
-const minColor = -5;
-const maxColor = 5;
-
 const remapInteger = (
   value: number,
   minFrom: number,
@@ -62,6 +55,13 @@ type Signal =
   | "warm"
   | "cool"
   | "night";
+
+const maxBrightness = 10;
+const minBrightness = 0;
+const minNightBrightness = -2;
+const maxNightBrightness = -1;
+const minColor = -5;
+const maxColor = 5;
 
 const unstable = "<unstable>";
 type Unstable = typeof unstable;
@@ -289,7 +289,7 @@ export class MainPlatformAccessory {
     if (this.accessory.context.on === "day") {
       return remapInteger(
         stableOr(this.accessory.context.brightness, 0),
-        minBrightness,
+        minBrightness + minNightBrightness,
         maxBrightness,
         0,
         100,
