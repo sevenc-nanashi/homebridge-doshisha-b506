@@ -66,7 +66,7 @@ const maxColor = 5;
 const unstable = "<unstable>";
 type Unstable = typeof unstable;
 type MaybeUnstable<T> = T | Unstable;
-type State = {
+export type State = {
   on: MaybeUnstable<"day" | "night" | "off">;
   brightness: MaybeUnstable<number>;
   nightBrightness: MaybeUnstable<number>;

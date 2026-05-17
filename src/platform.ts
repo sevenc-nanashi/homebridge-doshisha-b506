@@ -8,7 +8,7 @@ import type {
   Service,
 } from "homebridge";
 
-import { MainPlatformAccessory } from "./platformAccessory.js";
+import { MainPlatformAccessory, State } from "./platformAccessory.js";
 import { PLATFORM_NAME, PLUGIN_NAME } from "./settings.js";
 
 export class MainHomebridgePlatform implements DynamicPlatformPlugin {
@@ -61,13 +61,16 @@ export class MainHomebridgePlatform implements DynamicPlatformPlugin {
         existingAccessory.displayName,
       );
 
-      new MainPlatformAccessory(this, existingAccessory);
+      new MainPlatformAccessory(
+        this,
+        existingAccessory as PlatformAccessory<State>,
+      );
     } else {
       this.log.info("Adding as a new accessory");
 
       const accessory = new this.api.platformAccessory("B506", uuid);
 
-      new MainPlatformAccessory(this, accessory);
+      new MainPlatformAccessory(this, accessory as PlatformAccessory<State>);
 
       this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [
         accessory,

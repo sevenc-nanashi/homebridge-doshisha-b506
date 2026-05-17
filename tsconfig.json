@@ -4,8 +4,9 @@
     "lib": ["DOM", "ES2022"],
     "rootDir": "src",
     "module": "ES2022",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "strict": true,
+    "skipLibCheck": true,
     "declaration": true,
     "outDir": "dist",
     "sourceMap": true,
@@ -13,5 +14,5 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["homebridge-ui", "src", "config.ts"]
+  "include": ["homebridge-ui", "src"]
 }
