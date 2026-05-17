@@ -150,8 +150,9 @@ export class MainPlatformAccessory {
   async setOn(value: CharacteristicValue) {
     const isOn = value as boolean;
     await this.lock.acquire("", async () => {
+      const beforeOn = this.accessory.context.on;
       this.platform.log.info(
-        `Requested setOn: ${this.accessory.context.on} -> ${isOn}`,
+        `Requested setOn: current=${this.accessory.context.on} -> requested=${isOn}`,
       );
       if (isUnstable(this.accessory.context.on)) {
         if (isOn) {
@@ -179,6 +180,8 @@ export class MainPlatformAccessory {
         await this.triggerSignal("toggle");
         this.accessory.context.on = "off";
       }
+
+      this.platform.log.info(`Updated on: ${beforeOn} -> ${this.accessory.context.on}`);
     });
   }
 
@@ -326,7 +329,9 @@ export class MainPlatformAccessory {
       `Requested setColor: ${this.accessory.context.color} -> ${color}`,
     );
 
-    if (
+    if (this.accessory.context.on !== "day") {
+      return;
+    } else if (
       color === minColor &&
       this.accessory.context.color !== minColor &&
       this.accessory.context.brightness === 10
