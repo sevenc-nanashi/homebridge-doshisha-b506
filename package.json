@@ -16,6 +16,9 @@
     "dist",
     "src"
   ],
+  "engines": {
+    "homebridge": ">=2.0.0"
+  },
   "scripts": {
     "build": "pkgroll",
     "prepublishOnly": "pnpm run lint && pnpm run build",
